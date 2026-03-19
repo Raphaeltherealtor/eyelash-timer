@@ -1,0 +1,480 @@
+'use strict';
+
+// ─────────────────────────────────────────
+//  Constants & state
+// ─────────────────────────────────────────
+const MAX_TIMERS = 7;
+const ITEM_H = 40; // px per picker row
+
+let timers = [];          // Array<TimerState>
+let nextId = 0;
+const activeIntervals = {}; // id -> intervalId
+
+// ─────────────────────────────────────────
+//  Persistence
+// ─────────────────────────────────────────
+function saveTimers() {
+  try {
+    localStorage.setItem('eyelash-timers', JSON.stringify(timers));
+    localStorage.setItem('eyelash-next-id', String(nextId));
+  } catch (_) {}
+}
+
+function loadTimers() {
+  try {
+    const raw = localStorage.getItem('eyelash-timers');
+    const rawId = localStorage.getItem('eyelash-next-id');
+    if (rawId) nextId = parseInt(rawId, 10);
+    if (!raw) return;
+
+    timers = JSON.parse(raw);
+
+    // Restore running timers using saved endTime
+    timers.forEach(t => {
+      if (t.isRunning && t.endTime) {
+        const remaining = t.endTime - Date.now();
+        if (remaining <= 0) {
+          t.remainingMs = 0;
+          t.isRunning = false;
+          t.endTime = null;
+        } else {
+          t.remainingMs = remaining;
+        }
+      } else {
+        t.isRunning = false;
+      }
+    });
+  } catch (_) {
+    timers = [];
+  }
+}
+
+// ─────────────────────────────────────────
+//  Timer state helpers
+// ─────────────────────────────────────────
+function totalMs(t) {
+  return (t.hours * 3600 + t.minutes * 60 + t.seconds) * 1000;
+}
+
+function formatMs(ms) {
+  const total = Math.ceil(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+// ─────────────────────────────────────────
+//  Audio (Web Audio API)
+// ─────────────────────────────────────────
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  // iOS requires resume after user interaction
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playBeeps() {
+  try {
+    const ctx = getAudioCtx();
+    for (let i = 0; i < 3; i++) {
+      const t = ctx.currentTime + i * 0.6;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.5, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.start(t);
+      osc.stop(t + 0.36);
+    }
+  } catch (_) {}
+}
+
+// ─────────────────────────────────────────
+//  Timer actions
+// ─────────────────────────────────────────
+function addTimer() {
+  if (timers.length >= MAX_TIMERS) return;
+  timers.push({
+    id: nextId++,
+    label: `Timer ${timers.length + 1}`,
+    hours: 0, minutes: 0, seconds: 0,
+    isRunning: false, isPaused: false,
+    remainingMs: -1, endTime: null
+  });
+  saveTimers();
+  renderAll();
+  // Scroll new card into view
+  requestAnimationFrame(() => {
+    const cards = document.querySelectorAll('.timer-card');
+    cards[cards.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+}
+
+function deleteTimer(id) {
+  stopInterval(id);
+  timers = timers.filter(t => t.id !== id);
+  saveTimers();
+  renderAll();
+}
+
+function startTimer(id) {
+  // Unlock audio on first user interaction
+  getAudioCtx();
+
+  const t = timers.find(x => x.id === id);
+  if (!t) return;
+  const ms = (t.isPaused && t.remainingMs > 0) ? t.remainingMs : totalMs(t);
+  if (ms <= 0) return;
+
+  stopInterval(id);
+  t.isRunning = true;
+  t.isPaused = false;
+  t.remainingMs = ms;
+  t.endTime = Date.now() + ms;
+  saveTimers();
+  updateCardDisplay(t);
+
+  activeIntervals[id] = setInterval(() => {
+    const remaining = t.endTime - Date.now();
+    if (remaining <= 0) {
+      stopInterval(id);
+      t.remainingMs = 0;
+      t.isRunning = false;
+      t.endTime = null;
+      playBeeps();
+      saveTimers();
+      updateCardDisplay(t);
+    } else {
+      t.remainingMs = remaining;
+      // Only update the countdown text, not the whole card
+      const el = document.querySelector(`.timer-card[data-id="${id}"] .countdown`);
+      if (el) el.textContent = formatMs(remaining);
+    }
+  }, 100);
+}
+
+function pauseTimer(id) {
+  const t = timers.find(x => x.id === id);
+  if (!t) return;
+  stopInterval(id);
+  t.isRunning = false;
+  t.isPaused = true;
+  t.endTime = null;
+  saveTimers();
+  updateCardDisplay(t);
+}
+
+function resetTimer(id) {
+  const t = timers.find(x => x.id === id);
+  if (!t) return;
+  stopInterval(id);
+  t.isRunning = false;
+  t.isPaused = false;
+  t.remainingMs = -1;
+  t.endTime = null;
+  saveTimers();
+  updateCardDisplay(t);
+}
+
+function stopInterval(id) {
+  if (activeIntervals[id] != null) {
+    clearInterval(activeIntervals[id]);
+    delete activeIntervals[id];
+  }
+}
+
+// ─────────────────────────────────────────
+//  ScrollPicker class
+// ─────────────────────────────────────────
+class ScrollPicker {
+  constructor(min, max, initial, onChange) {
+    this.min = min;
+    this.max = max;
+    this.onChange = onChange;
+    this._settling = false;
+
+    this.wrap = document.createElement('div');
+    this.wrap.className = 'picker-wrap';
+
+    this.inner = document.createElement('div');
+    this.inner.className = 'picker-inner';
+
+    // Top spacer
+    const top = document.createElement('div');
+    top.className = 'picker-spacer';
+    this.inner.appendChild(top);
+
+    // Items
+    for (let i = min; i <= max; i++) {
+      const item = document.createElement('div');
+      item.className = 'picker-item';
+      item.textContent = pad(i);
+      this.inner.appendChild(item);
+    }
+
+    // Bottom spacer
+    const bot = document.createElement('div');
+    bot.className = 'picker-spacer';
+    this.inner.appendChild(bot);
+
+    this.wrap.appendChild(this.inner);
+
+    // Set value without animation (must happen after DOM insert)
+    requestAnimationFrame(() => {
+      this.inner.scrollTop = (initial - min) * ITEM_H;
+    });
+
+    // Scroll end detection
+    let tid;
+    this.inner.addEventListener('scroll', () => {
+      clearTimeout(tid);
+      tid = setTimeout(() => this._onSettle(), 120);
+    }, { passive: true });
+  }
+
+  getValue() {
+    return this.min + Math.round(this.inner.scrollTop / ITEM_H);
+  }
+
+  setValue(val) {
+    this.inner.scrollTop = (val - this.min) * ITEM_H;
+  }
+
+  _onSettle() {
+    const val = this.getValue();
+    // Snap to nearest
+    this.inner.scrollTop = (val - this.min) * ITEM_H;
+    if (this.onChange) this.onChange(val);
+  }
+}
+
+// ─────────────────────────────────────────
+//  Render helpers
+// ─────────────────────────────────────────
+
+// SVG icons (inline, no external deps)
+const ICON_PLAY = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+  <path d="M8 5v14l11-7L8 5z" fill="#89CFF0"/>
+</svg>`;
+
+const ICON_PAUSE = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+  <rect x="6" y="5" width="4" height="14" rx="1" fill="#89CFF0"/>
+  <rect x="14" y="5" width="4" height="14" rx="1" fill="#89CFF0"/>
+</svg>`;
+
+const ICON_DELETE = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#7a9bb5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+function createTimerCard(timer) {
+  const card = document.createElement('div');
+  card.className = 'timer-card';
+  card.dataset.id = timer.id;
+
+  // ── Top row ──────────────────────────────
+  const topRow = document.createElement('div');
+  topRow.className = 'card-top';
+
+  const labelBlock = document.createElement('div');
+  labelBlock.className = 'label-block';
+
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'timer-label';
+  labelInput.placeholder = 'Timer name';
+  labelInput.value = timer.label;
+  labelInput.maxLength = 30;
+  labelInput.addEventListener('change', () => {
+    timer.label = labelInput.value;
+    saveTimers();
+  });
+
+  const setDur = document.createElement('span');
+  setDur.className = 'timer-set-dur';
+
+  labelBlock.appendChild(labelInput);
+  labelBlock.appendChild(setDur);
+
+  const btnStart = document.createElement('button');
+  btnStart.className = 'icon-btn btn-start';
+  btnStart.innerHTML = ICON_PLAY;
+  btnStart.setAttribute('aria-label', 'Start timer');
+  btnStart.addEventListener('click', () => startTimer(timer.id));
+
+  const btnPause = document.createElement('button');
+  btnPause.className = 'icon-btn btn-pause';
+  btnPause.innerHTML = ICON_PAUSE;
+  btnPause.setAttribute('aria-label', 'Pause timer');
+  btnPause.addEventListener('click', () => pauseTimer(timer.id));
+
+  const btnDelete = document.createElement('button');
+  btnDelete.className = 'icon-btn btn-delete';
+  btnDelete.innerHTML = ICON_DELETE;
+  btnDelete.setAttribute('aria-label', 'Delete timer');
+  btnDelete.addEventListener('click', () => deleteTimer(timer.id));
+
+  topRow.appendChild(labelBlock);
+  topRow.appendChild(btnStart);
+  topRow.appendChild(btnPause);
+  topRow.appendChild(btnDelete);
+
+  // ── Divider ───────────────────────────────
+  const divider = document.createElement('div');
+  divider.className = 'card-divider';
+
+  // ── Pickers ───────────────────────────────
+  const pickersRow = document.createElement('div');
+  pickersRow.className = 'pickers-row';
+
+  function makeCol(pickerWidget, labelText) {
+    const col = document.createElement('div');
+    col.className = 'picker-col';
+    const lbl = document.createElement('span');
+    lbl.className = 'picker-label';
+    lbl.textContent = labelText;
+    col.appendChild(pickerWidget.wrap);
+    col.appendChild(lbl);
+    return col;
+  }
+
+  function makeColon() {
+    const c = document.createElement('span');
+    c.className = 'colon';
+    c.textContent = ':';
+    return c;
+  }
+
+  function updateSetDur() {
+    const ms = totalMs(timer);
+    if (ms > 0) {
+      setDur.textContent = formatMs(ms);
+      setDur.style.display = 'block';
+    } else {
+      setDur.style.display = 'none';
+    }
+  }
+
+  const pickerH = new ScrollPicker(0, 23, timer.hours, v => {
+    timer.hours = v; updateSetDur(); saveTimers();
+  });
+  const pickerM = new ScrollPicker(0, 59, timer.minutes, v => {
+    timer.minutes = v; updateSetDur(); saveTimers();
+  });
+  const pickerS = new ScrollPicker(0, 59, timer.seconds, v => {
+    timer.seconds = v; updateSetDur(); saveTimers();
+  });
+
+  // Store references for later updates
+  card._pickerH = pickerH;
+  card._pickerM = pickerM;
+  card._pickerS = pickerS;
+  card._updateSetDur = updateSetDur;
+
+  pickersRow.appendChild(makeCol(pickerH, 'HRS'));
+  pickersRow.appendChild(makeColon());
+  pickersRow.appendChild(makeCol(pickerM, 'MIN'));
+  pickersRow.appendChild(makeColon());
+  pickersRow.appendChild(makeCol(pickerS, 'SEC'));
+
+  // ── Countdown display ─────────────────────
+  const countdown = document.createElement('div');
+  countdown.className = 'countdown';
+
+  // ── Reset button ──────────────────────────
+  const btnReset = document.createElement('button');
+  btnReset.className = 'btn-reset';
+  btnReset.textContent = 'Reset';
+  btnReset.addEventListener('click', () => resetTimer(timer.id));
+
+  card.appendChild(topRow);
+  card.appendChild(divider);
+  card.appendChild(pickersRow);
+  card.appendChild(countdown);
+  card.appendChild(btnReset);
+
+  // Init display
+  updateSetDur();
+  applyCardState(card, timer);
+
+  // Re-start interval if timer was running when page loaded
+  if (timer.isRunning) {
+    startTimer(timer.id);
+  }
+
+  return card;
+}
+
+function applyCardState(card, timer) {
+  const isDone = timer.remainingMs === 0;
+  const showPickers = !timer.isRunning && !timer.isPaused && !isDone;
+
+  const pickersRow = card.querySelector('.pickers-row');
+  const countdown  = card.querySelector('.countdown');
+  const btnStart   = card.querySelector('.btn-start');
+  const btnPause   = card.querySelector('.btn-pause');
+  const btnReset   = card.querySelector('.btn-reset');
+
+  pickersRow.style.display = showPickers ? '' : 'none';
+  countdown.style.display  = showPickers ? 'none' : 'block';
+
+  btnStart.style.display = (!timer.isRunning && !isDone) ? '' : 'none';
+  btnPause.style.display = timer.isRunning ? '' : 'none';
+  btnReset.style.display = (timer.isPaused || isDone) ? '' : 'none';
+
+  if (isDone) {
+    countdown.textContent = 'Done!';
+    countdown.classList.add('done');
+  } else {
+    countdown.classList.remove('done');
+    const ms = timer.remainingMs > 0 ? timer.remainingMs : totalMs(timer);
+    countdown.textContent = formatMs(ms);
+  }
+}
+
+function updateCardDisplay(timer) {
+  const card = document.querySelector(`.timer-card[data-id="${timer.id}"]`);
+  if (card) applyCardState(card, timer);
+}
+
+// ─────────────────────────────────────────
+//  Full render
+// ─────────────────────────────────────────
+function renderAll() {
+  const list = document.getElementById('timer-list');
+  list.innerHTML = '';
+
+  timers.forEach(t => list.appendChild(createTimerCard(t)));
+
+  // Update count
+  document.getElementById('timer-count').textContent = `${timers.length} / ${MAX_TIMERS}`;
+
+  // Add button state
+  document.getElementById('btn-add').disabled = (timers.length >= MAX_TIMERS);
+}
+
+// ─────────────────────────────────────────
+//  Boot
+// ─────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadTimers();
+  renderAll();
+
+  document.getElementById('btn-add').addEventListener('click', addTimer);
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+});

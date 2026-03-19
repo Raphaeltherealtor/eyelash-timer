@@ -1,0 +1,33 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Baby blue background -->
+  <circle cx="50" cy="50" r="50" fill="#89CFF0"/>
+
+  <!-- Eyelashes (white, curving upward from eye top) -->
+  <path d="M30,42 Q28,28 25,18" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M38,36 Q37,22 38,12" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M50,34 Q51,20 53,10" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M62,36 Q65,22 68,13" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M70,42 Q74,29 78,20" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+  <!-- White eye (almond shape) -->
+  <path d="M12,50 Q50,18 88,50 Q50,82 12,50 Z" fill="white"/>
+
+  <!-- Baby blue iris -->
+  <circle cx="50" cy="50" r="19" fill="#89CFF0"/>
+
+  <!-- Clock face (white) -->
+  <circle cx="50" cy="50" r="16" fill="white"/>
+
+  <!-- Clock tick marks -->
+  <line x1="50" y1="35" x2="50" y2="38" stroke="#5BADD6" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="50" y1="62" x2="50" y2="65" stroke="#5BADD6" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="35" y1="50" x2="38" y2="50" stroke="#5BADD6" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="62" y1="50" x2="65" y2="50" stroke="#5BADD6" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Clock hands (10:10 position) -->
+  <line x1="50" y1="50" x2="43" y2="40" stroke="#5BADD6" stroke-width="2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="58" y2="41" stroke="#5BADD6" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Center dot -->
+  <circle cx="50" cy="50" r="2" fill="#5BADD6"/>
+</svg>
