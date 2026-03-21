@@ -873,6 +873,98 @@ function showTranslateButton() {
 }
 
 // ─────────────────────────────────────────
+//  Floating mic button (FAB)
+// ─────────────────────────────────────────
+function initFab() {
+  const fab = document.getElementById('fab-mic');
+  const SLOP = 6; // px — below this it's a tap, above it's a drag
+
+  let startX = 0, startY = 0;
+  let startRight = 16, startBottom = 0;
+  let dragging = false;
+
+  // Use right/bottom so it starts anchored to the default corner
+  // and we convert to left/top during drag for free movement
+  function getComputedPos() {
+    const rect = fab.getBoundingClientRect();
+    return { left: rect.left, top: rect.top };
+  }
+
+  function onPointerDown(e) {
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX;
+    startY = pt.clientY;
+    dragging = false;
+
+    // Switch to left/top absolute positioning so drag is unconstrained
+    const pos = getComputedPos();
+    fab.style.right  = 'auto';
+    fab.style.bottom = 'auto';
+    fab.style.left   = pos.left + 'px';
+    fab.style.top    = pos.top  + 'px';
+
+    document.addEventListener('mousemove', onPointerMove, { passive: false });
+    document.addEventListener('touchmove', onPointerMove, { passive: false });
+    document.addEventListener('mouseup',   onPointerUp);
+    document.addEventListener('touchend',  onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - startX;
+    const dy = pt.clientY - startY;
+    if (!dragging && (Math.abs(dx) > SLOP || Math.abs(dy) > SLOP)) dragging = true;
+    if (dragging) {
+      e.preventDefault();
+      fab.style.left = (parseFloat(fab.style.left) + dx) + 'px';
+      fab.style.top  = (parseFloat(fab.style.top)  + dy) + 'px';
+      startX = pt.clientX;
+      startY = pt.clientY;
+    }
+  }
+
+  function onPointerUp() {
+    document.removeEventListener('mousemove', onPointerMove);
+    document.removeEventListener('touchmove', onPointerMove);
+    document.removeEventListener('mouseup',   onPointerUp);
+    document.removeEventListener('touchend',  onPointerUp);
+
+    if (!dragging) handleFabTap();
+  }
+
+  fab.addEventListener('mousedown',  onPointerDown);
+  fab.addEventListener('touchstart', onPointerDown, { passive: true });
+
+  function handleFabTap() {
+    const onTimer = document.getElementById('tab-timer').classList.contains('active');
+    if (onTimer) {
+      // Switch to Translate tab
+      document.querySelector('.tab-btn[data-tab="translate"]').click();
+    } else {
+      // On Translate tab — toggle recording
+      const btnMic = document.getElementById('btn-mic');
+      btnMic.click();
+    }
+  }
+
+  // Keep FAB icon in sync with recording state
+  const observer = new MutationObserver(() => {
+    const recording = document.getElementById('btn-mic')?.classList.contains('recording');
+    fab.classList.toggle('recording', !!recording);
+    // Swap icon: stop square when recording, mic when not
+    fab.querySelector('svg').innerHTML = recording
+      ? '<rect x="6" y="6" width="12" height="12" rx="2" fill="white"/>'
+      : `<rect x="9" y="2" width="6" height="11" rx="3" fill="white"/>
+         <path d="M5 10a7 7 0 0 0 14 0" stroke="white" stroke-width="2" stroke-linecap="round"/>
+         <line x1="12" y1="17" x2="12" y2="21" stroke="white" stroke-width="2" stroke-linecap="round"/>
+         <line x1="8" y1="21" x2="16" y2="21" stroke="white" stroke-width="2" stroke-linecap="round"/>`;
+  });
+
+  const btnMic = document.getElementById('btn-mic');
+  if (btnMic) observer.observe(btnMic, { attributes: true, attributeFilter: ['class'] });
+}
+
+// ─────────────────────────────────────────
 //  Boot
 // ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -883,6 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initTabs();
   initTranslate();
+  initFab();
 
   // Register service worker
   if ('serviceWorker' in navigator) {

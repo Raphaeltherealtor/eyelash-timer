@@ -104,6 +104,36 @@ header h1 {
 #btn-add:active { opacity: .75; }
 #btn-add:disabled { opacity: .35; cursor: default; }
 
+/* ── Floating mic button ─────────────────── */
+#fab-mic {
+  position: fixed;
+  bottom: calc(68px + max(8px, env(safe-area-inset-bottom)));
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--blue-dark);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+  z-index: 100;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  transition: transform .1s, box-shadow .1s;
+}
+#fab-mic:active { cursor: grabbing; }
+#fab-mic.recording {
+  background: #ff5050;
+  animation: fab-pulse 1.4s ease-in-out infinite;
+}
+@keyframes fab-pulse {
+  0%, 100% { box-shadow: 0 3px 10px rgba(255,80,80,0.3); }
+  50%       { box-shadow: 0 3px 20px rgba(255,80,80,0); }
+}
+
 /* ── Tab Bar ─────────────────────────────── */
 #tab-bar {
   display: flex;
