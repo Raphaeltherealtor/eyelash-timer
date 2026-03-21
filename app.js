@@ -538,7 +538,16 @@ function initTranslate() {
     btnShowKey.textContent = showing ? 'Show' : 'Hide';
   });
 
-  // ── Language select ──────────────────────
+  // ── Source language select ───────────────
+  const sourceLangSelect = document.getElementById('source-lang-select');
+  const savedSourceLang  = localStorage.getItem('translate-source-lang') || '';
+  if (savedSourceLang) sourceLangSelect.value = savedSourceLang;
+
+  sourceLangSelect.addEventListener('change', () => {
+    localStorage.setItem('translate-source-lang', sourceLangSelect.value);
+  });
+
+  // ── Target language select ───────────────
   const langSelect = document.getElementById('lang-select');
   const savedLang  = localStorage.getItem('translate-lang') || '';
   if (savedLang) langSelect.value = savedLang;
@@ -553,6 +562,17 @@ function initTranslate() {
     } else if (currentTranscript && lang && lang === lastTranslatedLang) {
       // Already have a translation for this language — hide the button
       document.getElementById('btn-translate').style.display = 'none';
+    }
+  });
+
+  // ── Editable transcription ───────────────
+  const transcriptArea = document.getElementById('transcription-text');
+  transcriptArea.addEventListener('input', () => {
+    currentTranscript = transcriptArea.value.trim();
+    const lang = langSelect.value;
+    // If there's content and a target language, offer to re-translate
+    if (currentTranscript && lang) {
+      showTranslateButton();
     }
   });
 
@@ -578,7 +598,8 @@ function initTranslate() {
 
   // ── Copy buttons ─────────────────────────
   document.getElementById('btn-copy-transcript').addEventListener('click', () => {
-    navigator.clipboard.writeText(currentTranscript).catch(() => {});
+    const text = document.getElementById('transcription-text').value;
+    navigator.clipboard.writeText(text).catch(() => {});
   });
 
   document.getElementById('btn-copy-translation').addEventListener('click', () => {
@@ -652,6 +673,8 @@ async function transcribeAudio(audioBlob, ext) {
     const formData = new FormData();
     formData.append('file', audioBlob, `audio.${ext}`);
     formData.append('model', 'whisper-1');
+    const sourceLang = document.getElementById('source-lang-select').value;
+    if (sourceLang) formData.append('language', sourceLang);
 
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
@@ -757,7 +780,7 @@ async function translateText(text, lang) {
 function showTranscription(text) {
   const section = document.getElementById('transcription-section');
   const el      = document.getElementById('transcription-text');
-  el.textContent = text;
+  el.value = text;
   section.style.display = 'block';
 }
 

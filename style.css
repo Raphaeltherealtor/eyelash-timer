@@ -422,10 +422,23 @@ header h1 {
 }
 .btn-pill:active { opacity: .75; }
 
+/* Two-column language row */
+.lang-row {
+  display: flex;
+  gap: 10px;
+}
+
+.lang-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Language select */
 .select-wrap {
   position: relative;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .select-wrap::after {
@@ -522,6 +535,19 @@ header h1 {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.result-textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1.5px solid var(--divider);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--white);
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s;
+}
+.result-textarea:focus { border-color: var(--blue); }
 
 .result-text.loading {
   color: var(--text-sec);
