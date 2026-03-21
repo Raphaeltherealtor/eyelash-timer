@@ -465,6 +465,317 @@ function renderAll() {
 }
 
 // ─────────────────────────────────────────
+//  Tab switching
+// ─────────────────────────────────────────
+function initTabs() {
+  const tabBtns  = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+  const timerCount = document.getElementById('timer-count');
+  const headerTitle = document.getElementById('header-title');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.tab;
+      tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === target));
+      tabPanes.forEach(p => p.classList.toggle('active', p.id === `tab-${target}`));
+
+      if (target === 'timer') {
+        headerTitle.textContent = 'Eyelash Timer';
+        timerCount.style.display = '';
+      } else {
+        headerTitle.textContent = 'Translate';
+        timerCount.style.display = 'none';
+      }
+    });
+  });
+}
+
+// ─────────────────────────────────────────
+//  Translate — state
+// ─────────────────────────────────────────
+let mediaRecorder    = null;
+let audioChunks      = [];
+let currentTranscript = '';
+let lastTranslatedLang = ''; // the lang we last ran a translation for
+
+const MIC_SVG = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+  <rect x="9" y="2" width="6" height="11" rx="3" fill="#89CFF0"/>
+  <path d="M5 10a7 7 0 0 0 14 0" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+  <line x1="12" y1="17" x2="12" y2="21" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+  <line x1="8" y1="21" x2="16" y2="21" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+</svg>`;
+
+const STOP_SVG = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+  <rect x="6" y="6" width="12" height="12" rx="3" fill="#ff5050"/>
+</svg>`;
+
+// ─────────────────────────────────────────
+//  Translate — init
+// ─────────────────────────────────────────
+function initTranslate() {
+  // ── API key ──────────────────────────────
+  const keyInput   = document.getElementById('api-key-input');
+  const keyStatus  = document.getElementById('key-status');
+  const btnSaveKey = document.getElementById('btn-save-key');
+  const btnShowKey = document.getElementById('btn-show-key');
+
+  const savedKey = localStorage.getItem('openai-api-key');
+  if (savedKey) {
+    keyInput.value = savedKey;
+    keyStatus.textContent = '✓ Saved';
+  }
+
+  btnSaveKey.addEventListener('click', () => {
+    const key = keyInput.value.trim();
+    if (!key) return;
+    localStorage.setItem('openai-api-key', key);
+    keyStatus.textContent = '✓ Saved';
+  });
+
+  btnShowKey.addEventListener('click', () => {
+    const showing = keyInput.type === 'text';
+    keyInput.type = showing ? 'password' : 'text';
+    btnShowKey.textContent = showing ? 'Show' : 'Hide';
+  });
+
+  // ── Language select ──────────────────────
+  const langSelect = document.getElementById('lang-select');
+  const savedLang  = localStorage.getItem('translate-lang') || '';
+  if (savedLang) langSelect.value = savedLang;
+
+  langSelect.addEventListener('change', () => {
+    const lang = langSelect.value;
+    localStorage.setItem('translate-lang', lang);
+
+    // If transcript exists and language differs from what we last translated → show button
+    if (currentTranscript && lang && lang !== lastTranslatedLang) {
+      showTranslateButton();
+    } else if (currentTranscript && lang && lang === lastTranslatedLang) {
+      // Already have a translation for this language — hide the button
+      document.getElementById('btn-translate').style.display = 'none';
+    }
+  });
+
+  // ── Mic button ───────────────────────────
+  const btnMic   = document.getElementById('btn-mic');
+  const recStatus = document.getElementById('rec-status');
+
+  btnMic.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    } else {
+      startRecording();
+    }
+  });
+
+  // ── Manual translate button ──────────────
+  document.getElementById('btn-translate').addEventListener('click', () => {
+    const lang = langSelect.value;
+    if (currentTranscript && lang) {
+      translateText(currentTranscript, lang);
+    }
+  });
+
+  // ── Copy buttons ─────────────────────────
+  document.getElementById('btn-copy-transcript').addEventListener('click', () => {
+    navigator.clipboard.writeText(currentTranscript).catch(() => {});
+  });
+
+  document.getElementById('btn-copy-translation').addEventListener('click', () => {
+    const text = document.getElementById('translation-text').textContent;
+    navigator.clipboard.writeText(text).catch(() => {});
+  });
+}
+
+// ─────────────────────────────────────────
+//  Translate — recording
+// ─────────────────────────────────────────
+async function startRecording() {
+  const btnMic    = document.getElementById('btn-mic');
+  const micIcon   = document.getElementById('mic-icon');
+  const recStatus = document.getElementById('rec-status');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+
+    // Pick a MIME type Whisper accepts
+    const mimeType = ['audio/webm', 'audio/ogg', 'audio/mp4']
+      .find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      btnMic.classList.remove('recording');
+      micIcon.innerHTML = MIC_SVG;
+      recStatus.textContent = 'Transcribing…';
+      recStatus.classList.remove('error');
+
+      const mimeUsed = mediaRecorder.mimeType || 'audio/webm';
+      const ext = mimeUsed.includes('ogg') ? 'ogg' : mimeUsed.includes('mp4') ? 'mp4' : 'webm';
+      const audioBlob = new Blob(audioChunks, { type: mimeUsed });
+
+      await transcribeAudio(audioBlob, ext);
+    };
+
+    mediaRecorder.start();
+    btnMic.classList.add('recording');
+    micIcon.innerHTML = STOP_SVG;
+    recStatus.textContent = 'Recording… tap to stop';
+    recStatus.classList.remove('error');
+
+  } catch (err) {
+    recStatus.textContent = 'Microphone access denied';
+    recStatus.classList.add('error');
+  }
+}
+
+// ─────────────────────────────────────────
+//  Translate — transcription (Whisper)
+// ─────────────────────────────────────────
+async function transcribeAudio(audioBlob, ext) {
+  const recStatus = document.getElementById('rec-status');
+  const apiKey    = localStorage.getItem('openai-api-key');
+
+  if (!apiKey) {
+    recStatus.textContent = 'No API key — add one above';
+    recStatus.classList.add('error');
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBlob, `audio.${ext}`);
+    formData.append('model', 'whisper-1');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    currentTranscript = (data.text || '').trim();
+
+    if (!currentTranscript) {
+      recStatus.textContent = 'No speech detected — try again';
+      return;
+    }
+
+    recStatus.textContent = 'Tap to record';
+    showTranscription(currentTranscript);
+
+    const lang = document.getElementById('lang-select').value;
+    if (lang) {
+      // Language pre-selected: auto-translate
+      translateText(currentTranscript, lang);
+    } else {
+      // No language selected yet: show translation section with prompt
+      showTranslationSection('');
+      showTranslateButton();
+    }
+
+  } catch (err) {
+    recStatus.textContent = `Error: ${err.message}`;
+    recStatus.classList.add('error');
+  }
+}
+
+// ─────────────────────────────────────────
+//  Translate — translation (GPT)
+// ─────────────────────────────────────────
+async function translateText(text, lang) {
+  const section         = document.getElementById('translation-section');
+  const translationText = document.getElementById('translation-text');
+  const translationLabel = document.getElementById('translation-label');
+  const btnTranslate    = document.getElementById('btn-translate');
+  const apiKey          = localStorage.getItem('openai-api-key');
+
+  section.style.display = 'block';
+  translationLabel.textContent = `Translation · ${lang}`;
+  translationText.textContent  = 'Translating…';
+  translationText.classList.add('loading');
+  btnTranslate.style.display   = 'none';
+
+  if (!apiKey) {
+    translationText.textContent = 'No API key — add one above';
+    translationText.classList.remove('loading');
+    return;
+  }
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a professional translator. Translate the user's text to ${lang}. Output only the translation, nothing else.`,
+          },
+          { role: 'user', content: text },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const translated = data.choices?.[0]?.message?.content?.trim() || '';
+
+    translationText.textContent = translated;
+    translationText.classList.remove('loading');
+    lastTranslatedLang = lang;
+
+  } catch (err) {
+    translationText.textContent = `Error: ${err.message}`;
+    translationText.classList.remove('loading');
+  }
+}
+
+// ─────────────────────────────────────────
+//  Translate — UI helpers
+// ─────────────────────────────────────────
+function showTranscription(text) {
+  const section = document.getElementById('transcription-section');
+  const el      = document.getElementById('transcription-text');
+  el.textContent = text;
+  section.style.display = 'block';
+}
+
+function showTranslationSection(text) {
+  const section = document.getElementById('translation-section');
+  const el      = document.getElementById('translation-text');
+  el.textContent = text;
+  section.style.display = 'block';
+}
+
+function showTranslateButton() {
+  const section      = document.getElementById('translation-section');
+  const btnTranslate = document.getElementById('btn-translate');
+  section.style.display  = 'block';
+  btnTranslate.style.display = 'block';
+}
+
+// ─────────────────────────────────────────
 //  Boot
 // ─────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -472,6 +783,9 @@ document.addEventListener('DOMContentLoaded', () => {
   renderAll();
 
   document.getElementById('btn-add').addEventListener('click', addTimer);
+
+  initTabs();
+  initTranslate();
 
   // Register service worker
   if ('serviceWorker' in navigator) {

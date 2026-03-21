@@ -7,7 +7,7 @@
 
   <!-- PWA meta -->
   <meta name="theme-color" content="#89CFF0" />
-  <meta name="description" content="Multiple countdown timers — up to 7 at once" />
+  <meta name="description" content="Multiple countdown timers and AI translation" />
   <link rel="manifest" href="/manifest.json" />
 
   <!-- iOS PWA -->
@@ -24,15 +24,116 @@
 <body>
   <div id="app">
     <header>
-      <h1>Eyelash Timer</h1>
+      <h1 id="header-title">Eyelash Timer</h1>
       <span id="timer-count">0 / 7</span>
     </header>
 
-    <div id="timer-list"></div>
-
-    <div id="footer">
-      <button id="btn-add">+ Add Timer</button>
+    <!-- ── Timer Tab ───────────────────────── -->
+    <div id="tab-timer" class="tab-pane active">
+      <div id="timer-list"></div>
+      <div id="footer">
+        <button id="btn-add">+ Add Timer</button>
+      </div>
     </div>
+
+    <!-- ── Translate Tab ──────────────────── -->
+    <div id="tab-translate" class="tab-pane">
+
+      <!-- API Key -->
+      <div class="tr-section">
+        <div class="tr-section-header">
+          <span class="tr-label">OpenAI API Key</span>
+          <span id="key-status"></span>
+        </div>
+        <div class="key-input-row">
+          <input type="password" id="api-key-input" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+          <button id="btn-show-key" class="btn-text">Show</button>
+          <button id="btn-save-key" class="btn-pill">Save</button>
+        </div>
+      </div>
+
+      <!-- Language selector -->
+      <div class="tr-section">
+        <label class="tr-label" for="lang-select">Translate to</label>
+        <div class="select-wrap">
+          <select id="lang-select">
+            <option value="">— pick a language —</option>
+            <option value="Spanish">Spanish</option>
+            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+            <option value="Chinese (Traditional / Taiwanese)">Chinese (Traditional / Taiwanese)</option>
+            <option value="Tagalog">Tagalog (Filipino)</option>
+            <option value="Vietnamese">Vietnamese</option>
+            <option value="Korean">Korean</option>
+            <option value="Armenian">Armenian</option>
+            <option value="Japanese">Japanese</option>
+            <option value="Persian">Persian (Farsi)</option>
+            <option value="Arabic">Arabic</option>
+            <option value="Hindi">Hindi</option>
+            <option value="Punjabi">Punjabi</option>
+            <option value="Portuguese">Portuguese</option>
+            <option value="Russian">Russian</option>
+            <option value="French">French</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Mic -->
+      <div class="tr-section mic-section">
+        <button id="btn-mic" class="mic-btn" aria-label="Record">
+          <span id="mic-icon">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <rect x="9" y="2" width="6" height="11" rx="3" fill="#89CFF0"/>
+              <path d="M5 10a7 7 0 0 0 14 0" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+              <line x1="12" y1="17" x2="12" y2="21" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+              <line x1="8" y1="21" x2="16" y2="21" stroke="#89CFF0" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </button>
+        <div id="rec-status" class="rec-status">Tap to record</div>
+      </div>
+
+      <!-- Transcription -->
+      <div class="tr-section result-section" id="transcription-section" style="display:none">
+        <div class="result-header">
+          <span class="tr-label">Transcription</span>
+          <button id="btn-copy-transcript" class="btn-text">Copy</button>
+        </div>
+        <div id="transcription-text" class="result-text"></div>
+      </div>
+
+      <!-- Translation -->
+      <div class="tr-section result-section" id="translation-section" style="display:none">
+        <div class="result-header">
+          <span class="tr-label" id="translation-label">Translation</span>
+          <button id="btn-copy-translation" class="btn-text">Copy</button>
+        </div>
+        <div id="translation-text" class="result-text"></div>
+        <button id="btn-translate" class="btn-pill btn-translate-action" style="display:none">Translate</button>
+      </div>
+
+    </div><!-- /tab-translate -->
+
+    <!-- ── Tab Bar ─────────────────────────── -->
+    <nav id="tab-bar">
+      <button class="tab-btn active" data-tab="timer">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+          <polyline points="12 7 12 12 15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Timer</span>
+      </button>
+      <button class="tab-btn" data-tab="translate">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M3 5h10M8 3v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M5 8c.5 2 2 4 4 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M13 8c-.5 2-2 4-4 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="m15 19 2-5 2 5M15.8 17h2.4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="13" y="11" width="9" height="10" rx="2" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span>Translate</span>
+      </button>
+    </nav>
+
   </div>
 
   <script src="/app.js"></script>

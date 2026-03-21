@@ -1,4 +1,4 @@
-const CACHE = 'eyelash-timer-v1';
+const CACHE = 'eyelash-timer-v2';
 const ASSETS = [
   '/',
   '/index.html',
