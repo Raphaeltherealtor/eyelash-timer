@@ -379,6 +379,20 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 8px;
+}
+
+.key-saved-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.key-saved-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green);
 }
 
 #api-key-input {

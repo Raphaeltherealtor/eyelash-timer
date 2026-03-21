@@ -514,28 +514,42 @@ const STOP_SVG = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none">
 // ─────────────────────────────────────────
 function initTranslate() {
   // ── API key ──────────────────────────────
-  const keyInput   = document.getElementById('api-key-input');
-  const keyStatus  = document.getElementById('key-status');
-  const btnSaveKey = document.getElementById('btn-save-key');
-  const btnShowKey = document.getElementById('btn-show-key');
+  const keyInput     = document.getElementById('api-key-input');
+  const keyInputRow  = document.getElementById('key-input-row');
+  const keySavedRow  = document.getElementById('key-saved-row');
+  const btnSaveKey   = document.getElementById('btn-save-key');
+  const btnChangeKey = document.getElementById('btn-change-key');
 
-  const savedKey = localStorage.getItem('openai-api-key');
-  if (savedKey) {
-    keyInput.value = savedKey;
-    keyStatus.textContent = '✓ Saved';
+  function showKeySaved() {
+    keyInput.value   = '';       // never leave key visible in the field
+    keyInputRow.style.display  = 'none';
+    keySavedRow.style.display  = 'flex';
+  }
+
+  function showKeyInput() {
+    keyInputRow.style.display  = 'flex';
+    keySavedRow.style.display  = 'none';
+    keyInput.value = '';
+    keyInput.focus();
+  }
+
+  // On load: if key already saved, show saved state; otherwise show input
+  if (localStorage.getItem('openai-api-key')) {
+    showKeySaved();
+  } else {
+    showKeyInput();
   }
 
   btnSaveKey.addEventListener('click', () => {
     const key = keyInput.value.trim();
     if (!key) return;
     localStorage.setItem('openai-api-key', key);
-    keyStatus.textContent = '✓ Saved';
+    showKeySaved();
   });
 
-  btnShowKey.addEventListener('click', () => {
-    const showing = keyInput.type === 'text';
-    keyInput.type = showing ? 'password' : 'text';
-    btnShowKey.textContent = showing ? 'Show' : 'Hide';
+  btnChangeKey.addEventListener('click', () => {
+    localStorage.removeItem('openai-api-key');
+    showKeyInput();
   });
 
   // ── Source language select ───────────────

@@ -41,14 +41,18 @@
 
       <!-- API Key -->
       <div class="tr-section">
-        <div class="tr-section-header">
-          <span class="tr-label">OpenAI API Key</span>
-          <span id="key-status"></span>
-        </div>
-        <div class="key-input-row">
-          <input type="password" id="api-key-input" placeholder="sk-…" autocomplete="off" spellcheck="false" />
-          <button id="btn-show-key" class="btn-text">Show</button>
+        <span class="tr-label">OpenAI API Key</span>
+
+        <!-- Shown when no key is saved -->
+        <div id="key-input-row" class="key-input-row" style="display:none">
+          <input type="password" id="api-key-input" placeholder="Paste your API key…" autocomplete="off" spellcheck="false" />
           <button id="btn-save-key" class="btn-pill">Save</button>
+        </div>
+
+        <!-- Shown once key is saved -->
+        <div id="key-saved-row" class="key-saved-row" style="display:none">
+          <span class="key-saved-label">✓ API key saved</span>
+          <button id="btn-change-key" class="btn-text">Change</button>
         </div>
       </div>
 
