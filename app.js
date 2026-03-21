@@ -617,7 +617,7 @@ function initTranslate() {
   });
 
   document.getElementById('btn-copy-translation').addEventListener('click', () => {
-    const text = document.getElementById('translation-text').textContent;
+    const text = document.getElementById('translation-text').innerText;
     navigator.clipboard.writeText(text).catch(() => {});
   });
 }
@@ -762,7 +762,16 @@ async function translateText(text, lang) {
         messages: [
           {
             role: 'system',
-            content: `You are a professional translator. Translate the user's text to ${lang}. Output only the translation, nothing else.`,
+            content: `You are a professional translator. Translate the following text to ${lang}.
+
+Apply smart formatting to the translation:
+- If the content contains a list of items, steps, or ingredients, format them as markdown bullet points (- item) or numbered lists (1. item) as appropriate
+- If the content is formal (business, legal, medical, official), preserve a formal tone and use clear structure
+- If there are section titles or categories, use a markdown header (## Title)
+- Use **bold** for key terms, names, or important phrases where it adds clarity
+- Preserve paragraph breaks from the original
+
+Output only the translated and formatted text in markdown. No explanations, no preamble.`,
           },
           { role: 'user', content: text },
         ],
@@ -778,7 +787,7 @@ async function translateText(text, lang) {
     const data = await res.json();
     const translated = data.choices?.[0]?.message?.content?.trim() || '';
 
-    translationText.textContent = translated;
+    translationText.innerHTML = renderMarkdown(translated);
     translationText.classList.remove('loading');
     lastTranslatedLang = lang;
 
@@ -786,6 +795,63 @@ async function translateText(text, lang) {
     translationText.textContent = `Error: ${err.message}`;
     translationText.classList.remove('loading');
   }
+}
+
+// ─────────────────────────────────────────
+//  Markdown renderer (inline, no deps)
+// ─────────────────────────────────────────
+function renderMarkdown(raw) {
+  // 1. Escape HTML to prevent injection
+  let text = raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // 2. Process line by line for block elements
+  const lines = text.split('\n');
+  const out   = [];
+  let inUl = false, inOl = false;
+
+  const closeList = () => {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+
+    if (/^#{1,3}\s+/.test(line)) {
+      closeList();
+      const level = line.match(/^(#{1,3})/)[1].length;
+      const tag   = ['h2', 'h3', 'h4'][level - 1];
+      out.push(`<${tag}>${line.replace(/^#{1,3}\s+/, '')}</${tag}>`);
+
+    } else if (/^[-*]\s+/.test(line)) {
+      if (inOl) { out.push('</ol>'); inOl = false; }
+      if (!inUl) { out.push('<ul>'); inUl = true; }
+      out.push(`<li>${line.replace(/^[-*]\s+/, '')}</li>`);
+
+    } else if (/^\d+\.\s+/.test(line)) {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      if (!inOl) { out.push('<ol>'); inOl = true; }
+      out.push(`<li>${line.replace(/^\d+\.\s+/, '')}</li>`);
+
+    } else if (line.trim() === '') {
+      closeList();
+      out.push('<br>');
+
+    } else {
+      closeList();
+      out.push(`<p>${line}</p>`);
+    }
+  }
+
+  closeList();
+
+  // 3. Inline formatting
+  return out.join('')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,     '<em>$1</em>');
 }
 
 // ─────────────────────────────────────────

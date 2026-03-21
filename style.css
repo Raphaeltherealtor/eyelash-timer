@@ -568,6 +568,45 @@ header h1 {
   font-style: italic;
 }
 
+/* Markdown rendering inside translation output */
+#translation-text h2,
+#translation-text h3,
+#translation-text h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 10px 0 4px;
+}
+
+#translation-text p {
+  margin: 0 0 6px;
+}
+
+#translation-text ul,
+#translation-text ol {
+  padding-left: 20px;
+  margin: 4px 0 8px;
+}
+
+#translation-text li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+#translation-text strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+#translation-text em {
+  font-style: italic;
+}
+
+#translation-text br {
+  display: block;
+  margin: 4px 0;
+}
+
 .btn-translate-action {
   width: 100%;
   margin-top: 14px;
