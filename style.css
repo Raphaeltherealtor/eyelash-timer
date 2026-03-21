@@ -569,15 +569,6 @@ header h1 {
 }
 
 /* Markdown rendering inside translation output */
-#translation-text h2,
-#translation-text h3,
-#translation-text h4 {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 10px 0 4px;
-}
-
 #translation-text p {
   margin: 0 0 6px;
 }

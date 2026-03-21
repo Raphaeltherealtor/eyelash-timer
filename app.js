@@ -766,12 +766,12 @@ async function translateText(text, lang) {
 
 Apply smart formatting to the translation:
 - If the content contains a list of items, steps, or ingredients, format them as markdown bullet points (- item) or numbered lists (1. item) as appropriate
-- If the content is formal (business, legal, medical, official), preserve a formal tone and use clear structure
-- If there are section titles or categories, use a markdown header (## Title)
+- If the content is formal (business, legal, medical, official), preserve a formal tone and structure
 - Use **bold** for key terms, names, or important phrases where it adds clarity
 - Preserve paragraph breaks from the original
+- Do NOT add headers, titles, or any extra text beyond the translation itself
 
-Output only the translated and formatted text in markdown. No explanations, no preamble.`,
+Output only the translated and formatted text in markdown. No explanations, no preamble, no headers.`,
           },
           { role: 'user', content: text },
         ],
@@ -820,13 +820,7 @@ function renderMarkdown(raw) {
   for (const raw of lines) {
     const line = raw.trimEnd();
 
-    if (/^#{1,3}\s+/.test(line)) {
-      closeList();
-      const level = line.match(/^(#{1,3})/)[1].length;
-      const tag   = ['h2', 'h3', 'h4'][level - 1];
-      out.push(`<${tag}>${line.replace(/^#{1,3}\s+/, '')}</${tag}>`);
-
-    } else if (/^[-*]\s+/.test(line)) {
+    if (/^[-*]\s+/.test(line)) {
       if (inOl) { out.push('</ol>'); inOl = false; }
       if (!inUl) { out.push('<ul>'); inUl = true; }
       out.push(`<li>${line.replace(/^[-*]\s+/, '')}</li>`);
