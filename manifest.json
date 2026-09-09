@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "Eyelash Timer",
   "short_name": "Eyelash Timer",
   "description": "Multiple countdown timers — up to 7 at once",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ffffff",

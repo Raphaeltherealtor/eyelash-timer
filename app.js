@@ -10,6 +10,9 @@ let timers = [];          // Array<TimerState>
 let nextId = 0;
 const activeIntervals = {}; // id -> intervalId
 
+let wakeLock = null;      // screen wake lock while timers run
+let keepAliveEl = null;   // silent looping audio; stops Android freezing the page
+
 // ─────────────────────────────────────────
 //  Persistence
 // ─────────────────────────────────────────
@@ -24,12 +27,15 @@ function loadTimers() {
   try {
     const raw = localStorage.getItem('eyelash-timers');
     const rawId = localStorage.getItem('eyelash-next-id');
-    if (rawId) nextId = parseInt(rawId, 10);
+    const parsedId = parseInt(rawId, 10);
+    if (Number.isFinite(parsedId)) nextId = parsedId;
     if (!raw) return;
 
-    timers = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    timers = Array.isArray(parsed) ? parsed.map(normalizeTimer) : [];
 
-    // Restore running timers using saved endTime
+    // Restore running timers using saved endTime. endTime is kept so the
+    // countdown resumes at the exact moment it left off, not from the top.
     timers.forEach(t => {
       if (t.isRunning && t.endTime) {
         const remaining = t.endTime - Date.now();
@@ -44,6 +50,10 @@ function loadTimers() {
         t.isRunning = false;
       }
     });
+
+    // Any id collision from a partially-written save would silently merge two
+    // cards into one, so keep nextId ahead of everything we just loaded.
+    timers.forEach(t => { if (t.id >= nextId) nextId = t.id + 1; });
   } catch (_) {
     timers = [];
   }
@@ -52,6 +62,21 @@ function loadTimers() {
 // ─────────────────────────────────────────
 //  Timer state helpers
 // ─────────────────────────────────────────
+function normalizeTimer(t) {
+  const num = (v, fallback) => (Number.isFinite(v) ? v : fallback);
+  return {
+    id:          num(t?.id, 0),
+    label:       typeof t?.label === 'string' ? t.label : 'Timer',
+    hours:       num(t?.hours, 0),
+    minutes:     num(t?.minutes, 0),
+    seconds:     num(t?.seconds, 0),
+    isRunning:   !!t?.isRunning,
+    isPaused:    !!t?.isPaused,
+    remainingMs: num(t?.remainingMs, -1),
+    endTime:     num(t?.endTime, null),
+  };
+}
+
 function totalMs(t) {
   return (t.hours * 3600 + t.minutes * 60 + t.seconds) * 1000;
 }
@@ -102,6 +127,106 @@ function playBeeps() {
 }
 
 // ─────────────────────────────────────────
+//  Staying alive in the background
+// ─────────────────────────────────────────
+
+// Android freezes a backgrounded page and its intervals stop firing, so the
+// alarm never goes off. A page that is playing audio is exempt from freezing,
+// so we loop one second of silence for as long as a timer is counting down.
+function silentWavUrl() {
+  const sampleRate = 8000, samples = sampleRate; // 1 second, 16-bit mono
+  const dataBytes = samples * 2;
+  const buf = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buf);
+  const ascii = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);            // PCM header size
+  view.setUint16(20, 1, true);             // format: PCM
+  view.setUint16(22, 1, true);             // channels
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true);             // block align
+  view.setUint16(34, 16, true);            // bits per sample
+  ascii(36, 'data');
+  view.setUint32(40, dataBytes, true);
+  // Sample data stays zero-filled — that is the silence.
+
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+function anyRunning() {
+  return timers.some(t => t.isRunning);
+}
+
+function updateKeepAlive() {
+  const needed = anyRunning();
+
+  if (needed) {
+    if (!keepAliveEl) {
+      keepAliveEl = document.createElement('audio');
+      keepAliveEl.src = silentWavUrl();
+      keepAliveEl.loop = true;
+      keepAliveEl.setAttribute('playsinline', '');
+      document.body.appendChild(keepAliveEl);
+    }
+    keepAliveEl.play().catch(() => {});
+  } else if (keepAliveEl) {
+    keepAliveEl.pause();
+  }
+
+  updateWakeLock(needed);
+}
+
+// Keep the screen on while a timer runs — a lash tech's hands are busy.
+async function updateWakeLock(needed) {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (needed && !wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!needed && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (_) {
+    wakeLock = null;
+  }
+}
+
+function requestNotifyPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
+// Fires when the app is behind another app, so the alarm is actually noticed.
+function notifyDone(t) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const body = `${t.label || 'Timer'} finished`;
+  navigator.serviceWorker?.ready
+    .then(reg => reg.showNotification('Eyelash Timer', {
+      body,
+      tag: `timer-${t.id}`,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      vibrate: [300, 150, 300, 150, 300],
+      renotify: true,
+    }))
+    .catch(() => {});
+}
+
+function fireAlarm(t) {
+  playBeeps();
+  if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+  if (document.visibilityState !== 'visible') notifyDone(t);
+}
+
+// ─────────────────────────────────────────
 //  Timer actions
 // ─────────────────────────────────────────
 function addTimer() {
@@ -127,42 +252,76 @@ function deleteTimer(id) {
   timers = timers.filter(t => t.id !== id);
   saveTimers();
   renderAll();
+  updateKeepAlive();
 }
 
 function startTimer(id) {
   // Unlock audio on first user interaction
   getAudioCtx();
+  requestNotifyPermission();
 
   const t = timers.find(x => x.id === id);
   if (!t) return;
-  const ms = (t.isPaused && t.remainingMs > 0) ? t.remainingMs : totalMs(t);
+  // Resume from what is left whenever there is something left — a paused timer
+  // and a running one restored from storage both have to pick up where they
+  // stopped, not restart at the full duration.
+  const ms = ((t.isPaused || t.isRunning) && t.remainingMs > 0) ? t.remainingMs : totalMs(t);
   if (ms <= 0) return;
 
-  stopInterval(id);
   t.isRunning = true;
   t.isPaused = false;
   t.remainingMs = ms;
   t.endTime = Date.now() + ms;
   saveTimers();
+  ensureInterval(t);
   updateCardDisplay(t);
+  updateKeepAlive();
+}
 
-  activeIntervals[id] = setInterval(() => {
-    const remaining = t.endTime - Date.now();
-    if (remaining <= 0) {
-      stopInterval(id);
-      t.remainingMs = 0;
-      t.isRunning = false;
-      t.endTime = null;
-      playBeeps();
-      saveTimers();
-      updateCardDisplay(t);
+// Attaches the ticking interval to a timer that already has a valid endTime.
+// Used on re-render so redrawing the list never shifts a running countdown.
+function ensureInterval(t) {
+  if (activeIntervals[t.id] != null) return;
+  if (!t.isRunning || !t.endTime) return;
+
+  activeIntervals[t.id] = setInterval(() => tick(t), 250);
+  updateKeepAlive();
+}
+
+function tick(t) {
+  const remaining = t.endTime - Date.now();
+
+  if (remaining <= 0) {
+    stopInterval(t.id);
+    t.remainingMs = 0;
+    t.isRunning = false;
+    t.endTime = null;
+    saveTimers();
+    updateCardDisplay(t);
+    fireAlarm(t);
+    updateKeepAlive();
+    return;
+  }
+
+  t.remainingMs = remaining;
+  // Only update the countdown text, not the whole card
+  const el = document.querySelector(`.timer-card[data-id="${t.id}"] .countdown`);
+  if (el) el.textContent = formatMs(remaining);
+}
+
+// Coming back from a locked screen or another app: the interval may have been
+// frozen, so settle every timer against the wall clock before redrawing.
+function resyncTimers() {
+  timers.forEach(t => {
+    if (!t.isRunning || !t.endTime) return;
+    if (t.endTime - Date.now() <= 0) {
+      tick(t);
     } else {
-      t.remainingMs = remaining;
-      // Only update the countdown text, not the whole card
-      const el = document.querySelector(`.timer-card[data-id="${id}"] .countdown`);
-      if (el) el.textContent = formatMs(remaining);
+      ensureInterval(t);
+      updateCardDisplay(t);
     }
-  }, 100);
+  });
+  updateKeepAlive();
 }
 
 function pauseTimer(id) {
@@ -174,6 +333,7 @@ function pauseTimer(id) {
   t.endTime = null;
   saveTimers();
   updateCardDisplay(t);
+  updateKeepAlive();
 }
 
 function resetTimer(id) {
@@ -186,6 +346,7 @@ function resetTimer(id) {
   t.endTime = null;
   saveTimers();
   updateCardDisplay(t);
+  updateKeepAlive();
 }
 
 function stopInterval(id) {
@@ -204,6 +365,10 @@ class ScrollPicker {
     this.max = max;
     this.onChange = onChange;
     this._settling = false;
+    // A picker built inside a hidden card cannot take a scrollTop, so it reads
+    // back as 0. Until it has been positioned while visible, its scroll events
+    // are meaningless and must never be written back over the saved duration.
+    this._ready = false;
 
     this.wrap = document.createElement('div');
     this.wrap.className = 'picker-wrap';
@@ -232,9 +397,8 @@ class ScrollPicker {
     this.wrap.appendChild(this.inner);
 
     // Set value without animation (must happen after DOM insert)
-    requestAnimationFrame(() => {
-      this.inner.scrollTop = (initial - min) * ITEM_H;
-    });
+    this._initial = initial;
+    requestAnimationFrame(() => this.setValue(initial));
 
     // Scroll end detection
     let tid;
@@ -249,10 +413,18 @@ class ScrollPicker {
   }
 
   setValue(val) {
+    this._initial = val;
     this.inner.scrollTop = (val - this.min) * ITEM_H;
+    // Only trust the widget once the assignment actually took effect.
+    if (this.inner.clientHeight > 0) this._ready = true;
   }
 
   _onSettle() {
+    if (!this._ready) {
+      // Laid out at last — restore the real value instead of reporting 0.
+      this.setValue(this._initial);
+      return;
+    }
     const val = this.getValue();
     // Snap to nearest
     this.inner.scrollTop = (val - this.min) * ITEM_H;
@@ -408,9 +580,10 @@ function createTimerCard(timer) {
   updateSetDur();
   applyCardState(card, timer);
 
-  // Re-start interval if timer was running when page loaded
+  // Resume the countdown if it was running — attach to the existing endTime
+  // rather than calling startTimer, which would restart it from the top.
   if (timer.isRunning) {
-    startTimer(timer.id);
+    ensureInterval(timer);
   }
 
   return card;
@@ -428,6 +601,14 @@ function applyCardState(card, timer) {
 
   pickersRow.style.display = showPickers ? '' : 'none';
   countdown.style.display  = showPickers ? 'none' : 'block';
+
+  // Pickers just came back on screen (a reset, or a reload of a stopped
+  // timer) — re-seat them on the saved duration now that they have a layout.
+  if (showPickers && card._pickerH) {
+    card._pickerH.setValue(timer.hours);
+    card._pickerM.setValue(timer.minutes);
+    card._pickerS.setValue(timer.seconds);
+  }
 
   btnStart.style.display = (!timer.isRunning && !isDone) ? '' : 'none';
   btnPause.style.display = timer.isRunning ? '' : 'none';
@@ -970,12 +1151,23 @@ function initFab() {
 document.addEventListener('DOMContentLoaded', () => {
   loadTimers();
   renderAll();
+  updateKeepAlive();
 
   document.getElementById('btn-add').addEventListener('click', addTimer);
 
   initTabs();
   initTranslate();
   initFab();
+
+  // Returning from another app or a locked screen: the interval may have been
+  // frozen and the wake lock dropped, so settle against the clock and re-arm.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resyncTimers();
+  });
+  window.addEventListener('pageshow', resyncTimers);
+
+  // Last chance to record where every countdown stands before we get killed.
+  window.addEventListener('pagehide', saveTimers);
 
   // Register service worker
   if ('serviceWorker' in navigator) {
