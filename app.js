@@ -612,7 +612,16 @@ function applyCardState(card, timer) {
 
   btnStart.style.display = (!timer.isRunning && !isDone) ? '' : 'none';
   btnPause.style.display = timer.isRunning ? '' : 'none';
-  btnReset.style.display = (timer.isPaused || isDone) ? '' : 'none';
+  // Offered mid-count too, so a timer can be sent back to its set duration
+  // without pausing first. Hidden only on a fresh card, where there is nothing
+  // yet to reset. Needs an explicit 'block': the stylesheet defaults this
+  // button to display:none, so '' would silently leave it hidden.
+  btnReset.style.display = (timer.isRunning || timer.isPaused || isDone) ? 'block' : 'none';
+
+  // Name the duration it goes back to, so "Reset" reads as a promise about
+  // the number rather than a threat to it.
+  const setMs = totalMs(timer);
+  btnReset.textContent = setMs > 0 ? `Reset to ${formatMs(setMs)}` : 'Reset';
 
   if (isDone) {
     countdown.textContent = 'Done!';
