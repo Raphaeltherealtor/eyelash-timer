@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.eyelashtimer.app",
+      "sha256_cert_fingerprints": [
+        "3E:19:E0:6A:2A:56:E7:90:04:19:3D:B0:2E:03:FD:D9:E3:25:C5:18:77:64:2D:7C:D0:24:95:68:1D:86:9C:2B"
+      ]
+    }
+  }
+]

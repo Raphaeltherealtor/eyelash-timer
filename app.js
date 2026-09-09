@@ -654,21 +654,26 @@ function initTabs() {
   const timerCount = document.getElementById('timer-count');
   const headerTitle = document.getElementById('header-title');
 
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === target));
-      tabPanes.forEach(p => p.classList.toggle('active', p.id === `tab-${target}`));
+  function activateTab(target) {
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === target));
+    tabPanes.forEach(p => p.classList.toggle('active', p.id === `tab-${target}`));
 
-      if (target === 'timer') {
-        headerTitle.textContent = 'Eyelash Timer';
-        timerCount.style.display = '';
-      } else {
-        headerTitle.textContent = 'Translate';
-        timerCount.style.display = 'none';
-      }
-    });
+    if (target === 'timer') {
+      headerTitle.textContent = 'Eyelash Timer';
+      timerCount.style.display = '';
+    } else {
+      headerTitle.textContent = 'Translate';
+      timerCount.style.display = 'none';
+    }
+  }
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.tab));
   });
+
+  // ?tab=translate — how the Android floating button asks for this screen.
+  const wanted = new URLSearchParams(location.search).get('tab');
+  if (wanted === 'translate' || wanted === 'timer') activateTab(wanted);
 }
 
 // ─────────────────────────────────────────
